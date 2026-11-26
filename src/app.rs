@@ -107,6 +107,8 @@ pub struct App {
     discord_start: u64,
     discord_img: Option<crate::image::Rgba>,
     discord_art: Option<egui::TextureHandle>,
+    discord_badge_img: Option<crate::image::Rgba>,
+    discord_badge: Option<egui::TextureHandle>,
 
     vshared: Arc<video::Shared>,
     capture: Option<Capture>,
@@ -251,6 +253,8 @@ pub fn run(cfg: Config) -> Result<()> {
                 .unwrap_or(0),
             discord_img: crate::image::load_bytes(include_bytes!("../assets/discord-large.png"), 256).ok(),
             discord_art: None,
+            discord_badge_img: crate::image::load_bytes(include_bytes!("../assets/discord-small.png"), 128).ok(),
+            discord_badge: None,
             vshared: video::Shared::new(),
             capture: None,
             ashared: audio::Shared::new(),
@@ -840,17 +844,22 @@ impl App {
         if !c.discord_enabled {
             return None;
         }
-        let capturing = format!("Capturing {}", c.discord_capturing.trim()).trim().to_string();
         let app_id = if c.discord_app_id.trim().is_empty() { DISCORD_APP_ID } else { c.discord_app_id.trim() };
-        let image = c.discord_image.trim();
+        // A blank or unusable picture link falls back to the built-in picture.
+        let picture = |link: &str, fallback: &str| {
+            let link = link.trim();
+            if discord::is_picture(link) { link.to_string() } else { fallback.to_string() }
+        };
         Some(discord::Presence {
             app_id: app_id.to_string(),
             title: c.discord_title.clone(),
             kind: c.discord_kind.id(),
-            details: capturing.clone(),
+            details: c.discord_details.clone(),
             state: c.discord_extra_on.then(|| c.discord_extra.clone()),
-            large_image: if image.is_empty() { DISCORD_ART_URL.into() } else { image.to_string() },
-            large_text: capturing,
+            large_image: picture(&c.discord_image, DISCORD_ART_URL),
+            large_text: c.discord_large_text.clone(),
+            small_image: c.discord_small_on.then(|| picture(&c.discord_small_image, DISCORD_BADGE_URL)),
+            small_text: c.discord_small_text.clone(),
             button: c.discord_button_on.then(|| (c.discord_button_label.clone(), c.discord_button_url.clone())),
             start: c.discord_elapsed.then_some(self.discord_start),
         })
@@ -1125,6 +1134,15 @@ impl App {
                 )
             });
         }
+        if self.discord_badge.is_none() {
+            self.discord_badge = self.discord_badge_img.as_ref().map(|l| {
+                self.ui.ctx.load_texture(
+                    "discord-badge",
+                    egui::ColorImage::from_rgba_unmultiplied([l.w as usize, l.h as usize], &l.px),
+                    egui::TextureOptions::LINEAR,
+                )
+            });
+        }
         let discord_status = self.discord.as_ref().map(|d| d.status()).unwrap_or_default();
         let elapsed = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -1150,6 +1168,7 @@ impl App {
             logo: self.ui_logo.as_ref(),
             discord_status: &discord_status,
             discord_art: self.discord_art.as_ref(),
+            discord_badge: self.discord_badge.as_ref(),
             elapsed,
         };
         let mut actions = Vec::new();

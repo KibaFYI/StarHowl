@@ -55,9 +55,10 @@ You can change the Settings, Fullscreen and Mute keys in settings.
 - Left, right, top and bottom can each be different. Optional frame.
 
 **Discord**
-- Customizable top and bottom text.
-- Shows **Capturing** whatever you type (like your console).
-- Optional button with your own link.
+- Shows as **Watching Stream With StarHowl**.
+- Every bit is yours to change: top, middle and bottom text, big and small
+  pictures, big and small hover text, button text and button link.
+- Typos can't break it. Bad links fall back to the defaults, and settings warn you.
 - No login. No token. Turn it on in Settings → Discord.
 
 ## Something wrong?

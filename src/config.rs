@@ -104,6 +104,32 @@ pub const DISCORD_APP_ID: &str = "1575306816475238602";
 /// (served from the project's GitHub repository).
 pub const DISCORD_ART_URL: &str = "https://raw.githubusercontent.com/KibaFYI/StarHowl/main/assets/discord-large.png";
 
+/// The small purple play badge shown in the corner of the big picture.
+pub const DISCORD_BADGE_URL: &str = "https://raw.githubusercontent.com/KibaFYI/StarHowl/main/assets/discord-small.png";
+
+/// Discord shows this as "Watching Stream With StarHowl".
+pub const DEFAULT_TITLE: &str = "Stream With StarHowl";
+
+/// Settings from v0.2.4 and older stored "Capturing <this>" as just <this>,
+/// and used "Streaming With Starhowl" (Playing) as the title. Carry them over.
+fn migrate_discord(c: &mut Config, raw: &toml::Table) {
+    if !raw.contains_key("discord_details") {
+        if let Some(what) = raw.get("discord_capturing").and_then(|v| v.as_str()) {
+            let line = format!("Capturing {}", what.trim()).trim().to_string();
+            c.discord_details = line.clone();
+            if !raw.contains_key("discord_large_text") {
+                c.discord_large_text = line;
+            }
+        }
+    }
+    if c.discord_title == "Streaming With Starhowl" {
+        c.discord_title = DEFAULT_TITLE.into();
+        if c.discord_kind == DiscordKind::Playing {
+            c.discord_kind = DiscordKind::Watching;
+        }
+    }
+}
+
 impl Zone {
     pub fn resolve(self, bg: Fill) -> Fill {
         match self {
@@ -325,23 +351,30 @@ pub struct Config {
     pub key_fullscreen: Hotkey,
     pub key_mute: Hotkey,
 
-    // Discord Rich Presence
+    // Discord Rich Presence. Every text is the user's own; blank = left out.
     pub discord_enabled: bool,
     pub discord_app_id: String,
-    /// Top text (the big title), e.g. "Streaming With Starhowl".
-    pub discord_title: String,
     pub discord_kind: DiscordKind,
-    /// What is being captured: shown as "Capturing <this>".
-    pub discord_capturing: String,
+    /// Top text (the bold title), e.g. "Stream With StarHowl".
+    pub discord_title: String,
+    /// Middle text, e.g. "Capturing Xbox".
+    pub discord_details: String,
     pub discord_extra_on: bool,
-    /// Optional bottom text line.
+    /// Bottom text.
     pub discord_extra: String,
+    /// Big picture link ("" = the galaxy wolf).
+    pub discord_image: String,
+    /// Big text: shown when hovering the big picture.
+    pub discord_large_text: String,
+    pub discord_small_on: bool,
+    /// Small picture link ("" = the StarHowl badge).
+    pub discord_small_image: String,
+    /// Small text: shown when hovering the small picture.
+    pub discord_small_text: String,
     pub discord_button_on: bool,
     pub discord_button_label: String,
     pub discord_button_url: String,
     pub discord_elapsed: bool,
-    /// Image link, or the name of art uploaded to the Discord app. "" = the galaxy wolf.
-    pub discord_image: String,
 
     // Kept last: TOML wants tables after plain values.
     pub mode: Option<ModeSel>,
@@ -383,16 +416,20 @@ impl Default for Config {
             key_mute: Hotkey::new(true, false, false, b'M' as u16),
             discord_enabled: false,
             discord_app_id: DISCORD_APP_ID.into(),
-            discord_title: "Streaming With Starhowl".into(),
-            discord_kind: DiscordKind::Playing,
-            discord_capturing: "Xbox".into(),
+            discord_kind: DiscordKind::Watching,
+            discord_title: DEFAULT_TITLE.into(),
+            discord_details: "Capturing Xbox".into(),
             discord_extra_on: false,
             discord_extra: String::new(),
+            discord_image: String::new(),
+            discord_large_text: "Capturing Xbox".into(),
+            discord_small_on: true,
+            discord_small_image: String::new(),
+            discord_small_text: "StarHowl".into(),
             discord_button_on: false,
             discord_button_label: "Watch me".into(),
             discord_button_url: String::new(),
             discord_elapsed: true,
-            discord_image: String::new(),
             mode: None,
         }
     }
@@ -415,6 +452,9 @@ impl Config {
         match std::fs::read_to_string(&path) {
             Ok(text) => match toml::from_str::<Config>(&text) {
                 Ok(mut c) => {
+                    if let Ok(raw) = text.parse::<toml::Table>() {
+                        migrate_discord(&mut c, &raw);
+                    }
                     c.volume = c.volume.clamp(0.0, 1.0);
                     c.image_dim = c.image_dim.clamp(0.0, 0.9);
                     c.frame_px = c.frame_px.clamp(1, 64);
@@ -479,5 +519,40 @@ mod tests {
         assert_eq!(c.frame, FrameColor::Purple);
         assert_eq!(c.key_settings.to_string(), "Alt+S");
         assert_eq!(c.background, Fill::Galaxy);
+    }
+}
+
+#[cfg(test)]
+mod migrate_tests {
+    use super::*;
+
+    fn load_str(text: &str) -> Config {
+        let mut c: Config = toml::from_str(text).unwrap();
+        migrate_discord(&mut c, &text.parse().unwrap());
+        c
+    }
+
+    #[test]
+    fn old_discord_settings_carry_over() {
+        let c = load_str("discord_title = \"Streaming With Starhowl\"\ndiscord_kind = \"Playing\"\ndiscord_capturing = \"PS5\"\n");
+        assert_eq!(c.discord_title, "Stream With StarHowl");
+        assert_eq!(c.discord_kind, DiscordKind::Watching);
+        assert_eq!(c.discord_details, "Capturing PS5");
+        assert_eq!(c.discord_large_text, "Capturing PS5");
+    }
+
+    #[test]
+    fn custom_choices_are_left_alone() {
+        let c = load_str("discord_title = \"My stream\"\ndiscord_kind = \"Playing\"\ndiscord_details = \"Hello\"\ndiscord_capturing = \"PS5\"\n");
+        assert_eq!(c.discord_title, "My stream");
+        assert_eq!(c.discord_kind, DiscordKind::Playing);
+        assert_eq!(c.discord_details, "Hello");
+    }
+
+    #[test]
+    fn fresh_defaults_read_watching_stream_with_starhowl() {
+        let c = Config::default();
+        assert_eq!(c.discord_kind, DiscordKind::Watching);
+        assert_eq!(c.discord_title, "Stream With StarHowl");
     }
 }

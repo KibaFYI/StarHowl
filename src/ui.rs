@@ -47,6 +47,8 @@ pub struct Info<'a> {
     pub discord_status: &'a str,
     /// The galaxy wolf picture, for the Discord preview card.
     pub discord_art: Option<&'a TextureHandle>,
+    /// The small purple play badge, for the preview card.
+    pub discord_badge: Option<&'a TextureHandle>,
     /// Seconds since Starhowl started (the presence timer).
     pub elapsed: u64,
 }
@@ -448,18 +450,29 @@ fn look_section(ui: &mut egui::Ui, cfg: &mut Config, actions: &mut Vec<Action>) 
     });
 }
 
-fn text_box(ui: &mut egui::Ui, value: &mut String, hint: &str, width: f32, enabled: bool) {
+fn text_box(ui: &mut egui::Ui, value: &mut String, hint: &str, width: f32, enabled: bool, limit: usize) {
     ui.add_enabled(
         enabled,
-        egui::TextEdit::singleline(value).hint_text(hint).desired_width(width).char_limit(128),
+        egui::TextEdit::singleline(value).hint_text(hint).desired_width(width).char_limit(limit),
     );
 }
 
-const STREAMING_NOTE: &str = "Discord only lets apps on your PC show Playing, Watching, Listening or Competing.
-The purple Streaming badge comes from Discord itself: link Twitch or YouTube in
-Discord > Settings > Connections, and it appears while that channel is live.";
+const WARN: Color32 = Color32::from_rgb(0xF0, 0xB2, 0x5A);
+
+/// A short note under a field that Discord would ignore as typed.
+fn warn(ui: &mut egui::Ui, text: &str) {
+    ui.label("");
+    ui.add(egui::Label::new(RichText::new(text).size(11.5).color(WARN)).wrap());
+    ui.end_row();
+}
+
+/// Discord silently drops 1-character text.
+fn too_short(s: &str) -> bool {
+    s.trim().chars().count() == 1
+}
 
 fn discord_section(ui: &mut egui::Ui, cfg: &mut Config, info: &Info) {
+    use crate::discord::{is_link, is_picture, MAX_BUTTON, MAX_TEXT};
     section(ui, "DISCORD");
     grid(ui, "discord", |ui| {
         ui.label("Rich Presence");
@@ -471,63 +484,119 @@ fn discord_section(ui: &mut egui::Ui, cfg: &mut Config, info: &Info) {
         ui.end_row();
 
         let on = cfg.discord_enabled;
+
+        ui.label("Shown as");
+        ui.add_enabled_ui(on, |ui| choice(ui, "dkind", &mut cfg.discord_kind, DiscordKind::ALL, DiscordKind::label));
+        ui.end_row();
+
         ui.label("Top text");
-        text_box(ui, &mut cfg.discord_title, "Streaming With Starhowl", COMBO_W, on);
+        text_box(ui, &mut cfg.discord_title, DEFAULT_TITLE, COMBO_W, on, MAX_TEXT);
         ui.end_row();
+        if on && too_short(&cfg.discord_title) {
+            warn(ui, "Needs 2+ characters. Until then Discord shows \"StarHowl\".");
+        }
 
-        ui.label("Shown as").on_hover_text(STREAMING_NOTE);
-        ui.add_enabled_ui(on, |ui| choice(ui, "dkind", &mut cfg.discord_kind, DiscordKind::ALL, DiscordKind::label))
-            .response
-            .on_hover_text(STREAMING_NOTE);
+        ui.label("Middle text");
+        text_box(ui, &mut cfg.discord_details, "Capturing Xbox", COMBO_W, on, MAX_TEXT);
         ui.end_row();
-
-        ui.label("Capturing");
-        text_box(ui, &mut cfg.discord_capturing, "Xbox", COMBO_W, on);
-        ui.end_row();
+        if on && too_short(&cfg.discord_details) {
+            warn(ui, "Needs 2+ characters to show.");
+        }
 
         ui.label("Bottom text");
         ui.horizontal(|ui| {
             ui.add_enabled(on, egui::Checkbox::without_text(&mut cfg.discord_extra_on));
-            text_box(ui, &mut cfg.discord_extra, "Your text", COMBO_W - 30.0, on && cfg.discord_extra_on);
+            text_box(ui, &mut cfg.discord_extra, "Your text", COMBO_W - 30.0, on && cfg.discord_extra_on, MAX_TEXT);
         });
         ui.end_row();
+        if on && cfg.discord_extra_on && too_short(&cfg.discord_extra) {
+            warn(ui, "Needs 2+ characters to show.");
+        }
+
+        ui.label("Big picture");
+        text_box(ui, &mut cfg.discord_image, "blank = galaxy wolf", COMBO_W, on, 512);
+        ui.end_row();
+        if on && !cfg.discord_image.trim().is_empty() && !is_picture(&cfg.discord_image) {
+            warn(ui, "Use an https:// image link. Showing the galaxy wolf until then.");
+        }
+
+        ui.label("Big text");
+        text_box(ui, &mut cfg.discord_large_text, "Shows when hovering the big picture", COMBO_W, on, MAX_TEXT);
+        ui.end_row();
+        if on && too_short(&cfg.discord_large_text) {
+            warn(ui, "Needs 2+ characters to show.");
+        }
+
+        let small_on = on && cfg.discord_small_on;
+        ui.label("Small picture");
+        ui.horizontal(|ui| {
+            ui.add_enabled(on, egui::Checkbox::without_text(&mut cfg.discord_small_on));
+            text_box(ui, &mut cfg.discord_small_image, "blank = StarHowl badge", COMBO_W - 30.0, small_on, 512);
+        });
+        ui.end_row();
+        if small_on && !cfg.discord_small_image.trim().is_empty() && !is_picture(&cfg.discord_small_image) {
+            warn(ui, "Use an https:// image link. Showing the StarHowl badge until then.");
+        }
+
+        ui.label("Small text");
+        text_box(ui, &mut cfg.discord_small_text, "Shows when hovering the small picture", COMBO_W, small_on, MAX_TEXT);
+        ui.end_row();
+        if small_on && too_short(&cfg.discord_small_text) {
+            warn(ui, "Needs 2+ characters to show.");
+        }
 
         ui.label("Button");
         ui.horizontal(|ui| {
             ui.add_enabled(on, egui::Checkbox::without_text(&mut cfg.discord_button_on));
-            text_box(ui, &mut cfg.discord_button_label, "Button text", COMBO_W - 30.0, on && cfg.discord_button_on);
+            text_box(
+                ui,
+                &mut cfg.discord_button_label,
+                "Button text",
+                COMBO_W - 30.0,
+                on && cfg.discord_button_on,
+                MAX_BUTTON,
+            );
         });
         ui.end_row();
 
         if cfg.discord_button_on {
             ui.label("Button link");
-            text_box(ui, &mut cfg.discord_button_url, "https://twitch.tv/you", COMBO_W, on);
+            text_box(ui, &mut cfg.discord_button_url, "https://twitch.tv/you", COMBO_W, on, 512);
             ui.end_row();
+            if on && cfg.discord_button_label.trim().is_empty() {
+                warn(ui, "The button needs text to show.");
+            } else if on && !is_link(&cfg.discord_button_url) {
+                warn(ui, "Needs a full link like https://twitch.tv/you. The button stays hidden until then.");
+            }
         }
 
         ui.label("Timer");
         ui.add_enabled(on, egui::Checkbox::new(&mut cfg.discord_elapsed, "Show time elapsed"));
         ui.end_row();
 
-        ui.label("Image link");
-        text_box(ui, &mut cfg.discord_image, "blank = galaxy wolf", COMBO_W, on);
-        ui.end_row();
-
         ui.label("App ID");
-        text_box(ui, &mut cfg.discord_app_id, DISCORD_APP_ID, COMBO_W, on);
+        text_box(ui, &mut cfg.discord_app_id, DISCORD_APP_ID, COMBO_W, on, 24);
         ui.end_row();
+        if on && !cfg.discord_app_id.trim().chars().all(|c| c.is_ascii_digit()) {
+            warn(ui, "Must be numbers only.");
+        }
     });
     discord_preview(ui, cfg, info);
 }
 
 /// A mock-up of how the activity looks on a Discord profile.
 fn discord_preview(ui: &mut egui::Ui, cfg: &Config, info: &Info) {
+    use crate::discord::{is_link, MAX_BUTTON, MAX_TEXT};
     const CARD: Color32 = Color32::from_rgb(0x23, 0x24, 0x28);
     const MUTED: Color32 = Color32::from_rgb(0xB5, 0xBA, 0xC1);
     const BODY: Color32 = Color32::from_rgb(0xDB, 0xDE, 0xE1);
+    // Exactly what Discord would show for a field (or nothing).
+    let shown = |s: &str| {
+        let t = s.trim();
+        (t.chars().count() >= 2).then(|| t.chars().take(MAX_TEXT).collect::<String>())
+    };
     ui.add_space(8.0);
     weak(ui, "Preview (how friends will see it)");
-    let capturing = format!("Capturing {}", cfg.discord_capturing.trim()).trim().to_string();
     egui::Frame::default()
         .fill(CARD)
         .corner_radius(8)
@@ -538,18 +607,44 @@ fn discord_preview(ui: &mut egui::Ui, cfg: &Config, info: &Info) {
             ui.add_space(2.0);
             ui.horizontal(|ui| {
                 if let Some(art) = info.discord_art {
-                    ui.add(
+                    let big = ui.add(
                         egui::Image::from_texture(egui::load::SizedTexture::new(art.id(), egui::vec2(72.0, 72.0)))
                             .corner_radius(8),
-                    )
-                    .on_hover_text(&capturing);
+                    );
+                    let mut on_badge = false;
+                    if let (true, Some(badge)) = (cfg.discord_small_on, info.discord_badge) {
+                        let c = big.rect.right_bottom() - egui::vec2(4.0, 4.0);
+                        let r = egui::Rect::from_center_size(c, egui::vec2(24.0, 24.0));
+                        ui.painter().circle_filled(c, 14.0, CARD);
+                        ui.painter().image(
+                            badge.id(),
+                            r,
+                            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                            Color32::WHITE,
+                        );
+                        let hover = ui.interact(r, ui.id().with("discord-badge"), egui::Sense::hover());
+                        on_badge = hover.hovered();
+                        if let Some(t) = shown(&cfg.discord_small_text) {
+                            hover.on_hover_text(t);
+                        }
+                    }
+                    if !on_badge {
+                        if let Some(t) = shown(&cfg.discord_large_text) {
+                            big.on_hover_text(t);
+                        }
+                    }
                 }
                 ui.vertical(|ui| {
                     ui.add_space(2.0);
-                    ui.label(RichText::new(cfg.discord_title.trim()).size(14.0).strong().color(Color32::WHITE));
-                    ui.label(RichText::new(&capturing).size(12.5).color(BODY));
-                    if cfg.discord_extra_on && !cfg.discord_extra.trim().is_empty() {
-                        ui.label(RichText::new(cfg.discord_extra.trim()).size(12.5).color(BODY));
+                    let title = shown(&cfg.discord_title).unwrap_or_else(|| "StarHowl".into());
+                    ui.label(RichText::new(title).size(14.0).strong().color(Color32::WHITE));
+                    if let Some(t) = shown(&cfg.discord_details) {
+                        ui.label(RichText::new(t).size(12.5).color(BODY));
+                    }
+                    if cfg.discord_extra_on {
+                        if let Some(t) = shown(&cfg.discord_extra) {
+                            ui.label(RichText::new(t).size(12.5).color(BODY));
+                        }
                     }
                     if cfg.discord_elapsed {
                         let s = info.elapsed;
@@ -558,15 +653,16 @@ fn discord_preview(ui: &mut egui::Ui, cfg: &Config, info: &Info) {
                     }
                 });
             });
-            if cfg.discord_button_on && !cfg.discord_button_label.trim().is_empty() {
+            let label: String = cfg.discord_button_label.trim().chars().take(MAX_BUTTON).collect();
+            if cfg.discord_button_on && !label.is_empty() && is_link(&cfg.discord_button_url) {
                 ui.add_space(6.0);
-                let b = egui::Button::new(RichText::new(cfg.discord_button_label.trim()).color(Color32::WHITE))
+                let b = egui::Button::new(RichText::new(label).color(Color32::WHITE))
                     .fill(Color32::from_rgb(0x4E, 0x50, 0x58));
                 ui.add_sized([ui.available_width(), 28.0], b);
             }
         });
-    weak(ui, "Discord shows the button to others, not on your own profile.");
-    weak(ui, "Want the purple Streaming badge? Link Twitch or YouTube in Discord's Connections; it shows while you're live.");
+    weak(ui, "Hover the pictures to see the big and small text.");
+    weak(ui, "Friends see the button. Discord hides it on your own profile.");
 }
 
 fn keys_section(ui: &mut egui::Ui, cfg: &mut Config, info: &Info, actions: &mut Vec<Action>) {

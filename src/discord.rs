@@ -26,7 +26,12 @@ pub struct Presence {
     pub state: Option<String>,
     /// Image link (https://...) or the name of an art asset uploaded to the app.
     pub large_image: String,
+    /// Shown when hovering the big picture.
     pub large_text: String,
+    /// Small picture in the corner of the big one (None = no small picture).
+    pub small_image: Option<String>,
+    /// Shown when hovering the small picture.
+    pub small_text: String,
     pub button: Option<(String, String)>,
     /// Unix seconds the "elapsed" timer counts from.
     pub start: Option<u64>,
@@ -276,13 +281,36 @@ fn connect(app_id: &str) -> Result<(File, String), String> {
     })
 }
 
+/// A full web link Discord accepts (buttons allow http and https).
+pub fn is_link(s: &str) -> bool {
+    let s = s.trim();
+    let rest = s.strip_prefix("https://").or_else(|| s.strip_prefix("http://"));
+    rest.is_some_and(|r| r.contains('.') && !r.starts_with('.'))
+        && s.len() <= 512
+        && !s.chars().any(char::is_whitespace)
+}
+
+/// A picture Discord can show: an https link, or the name of art uploaded to
+/// the Discord application (letters, digits, `_`, `-`).
+pub fn is_picture(s: &str) -> bool {
+    let s = s.trim();
+    (s.starts_with("https://") && is_link(s))
+        || (!s.is_empty() && s.len() <= 256 && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-'))
+}
+
+/// Discord drops text shorter than 2 characters and cuts it at 128.
+pub const MIN_TEXT: usize = 2;
+pub const MAX_TEXT: usize = 128;
+/// Button labels: 1-32 characters.
+pub const MAX_BUTTON: usize = 32;
+
 /// Discord wants 2-128 characters in text fields.
 fn text(s: &str) -> Option<String> {
     let t = s.trim();
-    if t.chars().count() < 2 {
+    if t.chars().count() < MIN_TEXT {
         None
     } else {
-        Some(t.chars().take(128).collect())
+        Some(t.chars().take(MAX_TEXT).collect())
     }
 }
 
@@ -302,20 +330,25 @@ fn activity_json(p: &Presence) -> Value {
     }
     let mut assets = json!({});
     let image = p.large_image.trim();
-    if !image.is_empty() {
+    if is_picture(image) {
         assets["large_image"] = json!(image);
         if let Some(t) = text(&p.large_text) {
             assets["large_text"] = json!(t);
+        }
+    }
+    if let Some(small) = p.small_image.as_deref().map(str::trim).filter(|s| is_picture(s)) {
+        assets["small_image"] = json!(small);
+        if let Some(t) = text(&p.small_text) {
+            assets["small_text"] = json!(t);
         }
     }
     if assets.as_object().is_some_and(|o| !o.is_empty()) {
         a["assets"] = assets;
     }
     if let Some((label, url)) = &p.button {
-        let label: String = label.trim().chars().take(32).collect();
-        let url = url.trim();
-        if !label.is_empty() && (url.starts_with("https://") || url.starts_with("http://")) && url.len() <= 512 {
-            a["buttons"] = json!([{ "label": label, "url": url }]);
+        let label: String = label.trim().chars().take(MAX_BUTTON).collect();
+        if !label.is_empty() && is_link(url) {
+            a["buttons"] = json!([{ "label": label, "url": url.trim() }]);
         }
     }
     a
@@ -349,7 +382,9 @@ mod tests {
             details: "Capturing Xbox".into(),
             state: Some("Your text here".into()),
             large_image: "https://example.com/wolf.png".into(),
-            large_text: "Capturing Xbox".into(),
+            large_text: "Big text".into(),
+            small_image: Some("https://example.com/badge.png".into()),
+            small_text: "Small text".into(),
             button: Some(("Watch".into(), "https://twitch.tv/someone".into())),
             start: Some(1_700_000_000),
         }
@@ -361,7 +396,9 @@ mod tests {
         assert_eq!(a["name"], "Streaming With Starhowl");
         assert_eq!(a["details"], "Capturing Xbox");
         assert_eq!(a["state"], "Your text here");
-        assert_eq!(a["assets"]["large_text"], "Capturing Xbox");
+        assert_eq!(a["assets"]["large_text"], "Big text");
+        assert_eq!(a["assets"]["small_image"], "https://example.com/badge.png");
+        assert_eq!(a["assets"]["small_text"], "Small text");
         assert_eq!(a["buttons"][0]["url"], "https://twitch.tv/someone");
         assert_eq!(a["timestamps"]["start"], 1_700_000_000);
     }
@@ -372,9 +409,34 @@ mod tests {
         p.state = Some("x".into()); // Discord rejects 1-character text
         p.button = Some(("Watch".into(), "twitch.tv/no-scheme".into()));
         p.large_image = String::new();
+        p.small_image = None;
         let a = activity_json(&p);
         assert!(a.get("state").is_none());
         assert!(a.get("buttons").is_none());
         assert!(a.get("assets").is_none());
+    }
+
+    #[test]
+    fn bad_links_never_reach_discord() {
+        let mut p = sample();
+        p.large_image = "not a link".into();
+        p.small_image = Some("http://insecure.example.com/x.png".into()); // pictures need https
+        p.button = Some(("A very long button label that goes past the limit".into(), "https://ok.example.com".into()));
+        let a = activity_json(&p);
+        assert!(a.get("assets").is_none());
+        assert_eq!(a["buttons"][0]["label"].as_str().unwrap().chars().count(), MAX_BUTTON);
+    }
+
+    #[test]
+    fn link_and_picture_rules() {
+        assert!(is_link("https://twitch.tv/someone"));
+        assert!(is_link("http://example.com"));
+        assert!(!is_link("twitch.tv/someone"));
+        assert!(!is_link("https://no spaces.com"));
+        assert!(!is_link("https://localhost"));
+        assert!(is_picture("https://example.com/a.png"));
+        assert!(is_picture("starhowl"));
+        assert!(!is_picture("http://example.com/a.png"));
+        assert!(!is_picture("two words"));
     }
 }

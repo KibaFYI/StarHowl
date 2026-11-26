@@ -1,6 +1,6 @@
 [package]
 name = "starhowl"
-version = "0.2.4"
+version = "0.2.5"
 license = "BSD-2-Clause"
 edition = "2021"
 description = "A tiny, low-latency capture-card viewer for Windows"

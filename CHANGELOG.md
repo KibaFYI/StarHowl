@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.2.5
+- Discord now shows "Watching Stream With StarHowl" by default.
+- Fully customizable: top, middle and bottom text, big and small picture,
+  big and small hover text, button text and button link.
+- New small purple badge picture (assets/discord-small.png).
+- Settings warn about anything Discord would ignore; bad picture links fall
+  back to the built-in pictures instead of breaking the presence.
+- Older settings carry over ("Capturing ___" moves into the new text boxes).
+
 ## v0.2.4
 - Discord settings say "Top text" and "Bottom text".
 - README: Discord section describes the customizable top and bottom text.
