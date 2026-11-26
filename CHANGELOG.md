@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.6
+- Fixed: the small purple badge didn't show on Discord (Discord's image cache
+  held an old "not found"; the badge now uses a fresh link).
+
 ## v0.2.5
 - Discord now shows "Watching Stream With StarHowl" by default.
 - Fully customizable: top, middle and bottom text, big and small picture,

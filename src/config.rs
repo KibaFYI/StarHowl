@@ -105,7 +105,9 @@ pub const DISCORD_APP_ID: &str = "1575306816475238602";
 pub const DISCORD_ART_URL: &str = "https://raw.githubusercontent.com/KibaFYI/StarHowl/main/assets/discord-large.png";
 
 /// The small purple play badge shown in the corner of the big picture.
-pub const DISCORD_BADGE_URL: &str = "https://raw.githubusercontent.com/KibaFYI/StarHowl/main/assets/discord-small.png";
+/// (`?v=2` makes Discord fetch it fresh: its image cache remembered the link
+/// from before the file existed.)
+pub const DISCORD_BADGE_URL: &str = "https://raw.githubusercontent.com/KibaFYI/StarHowl/main/assets/discord-small.png?v=2";
 
 /// Discord shows this as "Watching Stream With StarHowl".
 pub const DEFAULT_TITLE: &str = "Stream With StarHowl";
