@@ -247,6 +247,25 @@ fn video_section(ui: &mut egui::Ui, cfg: &mut Config, info: &Info, actions: &mut
         choice(ui, "scaling", &mut cfg.scaling, Scaling::ALL, Scaling::label);
         ui.end_row();
 
+        ui.label("Position");
+        ui.vertical(|ui| {
+            ui.horizontal(|ui| {
+                for &v in AlignX::ALL {
+                    ui.selectable_value(&mut cfg.align_x, v, v.label());
+                }
+            });
+            ui.horizontal(|ui| {
+                for &v in AlignY::ALL {
+                    ui.selectable_value(&mut cfg.align_y, v, v.label());
+                }
+            });
+        });
+        ui.end_row();
+
+        ui.label("");
+        weak(ui, "Push the picture to a side to make room for overlays.");
+        ui.end_row();
+
         ui.label("Filter");
         choice(ui, "filter", &mut cfg.filter, Filter::ALL, Filter::label);
         ui.end_row();
@@ -471,6 +490,22 @@ fn too_short(s: &str) -> bool {
     s.trim().chars().count() == 1
 }
 
+/// A grey explanation under a field (not a problem, just how it works).
+fn note(ui: &mut egui::Ui, text: &str) {
+    ui.label("");
+    ui.add(egui::Label::new(RichText::new(text).size(11.5).color(WEAK)).wrap());
+    ui.end_row();
+}
+
+/// True when `t` would repeat one of the lines already shown (so Starhowl
+/// leaves it out: phones show hover texts as extra lines).
+fn repeats(t: &str, others: &[&str]) -> bool {
+    let t = t.trim();
+    t.chars().count() >= 2 && others.iter().any(|o| o.trim().eq_ignore_ascii_case(t))
+}
+
+const REPEAT_NOTE: &str = "Same words as a line above, so it's left out. Phones would show it twice.";
+
 fn discord_section(ui: &mut egui::Ui, cfg: &mut Config, info: &Info) {
     use crate::discord::{is_link, is_picture, MAX_BUTTON, MAX_TEXT};
     section(ui, "DISCORD");
@@ -523,8 +558,11 @@ fn discord_section(ui: &mut egui::Ui, cfg: &mut Config, info: &Info) {
         ui.label("Big text");
         text_box(ui, &mut cfg.discord_large_text, "Shows when hovering the big picture", COMBO_W, on, MAX_TEXT);
         ui.end_row();
+        let bottom = if cfg.discord_extra_on { cfg.discord_extra.as_str() } else { "" };
         if on && too_short(&cfg.discord_large_text) {
             warn(ui, "Needs 2+ characters to show.");
+        } else if on && repeats(&cfg.discord_large_text, &[&cfg.discord_title, &cfg.discord_details, bottom]) {
+            note(ui, REPEAT_NOTE);
         }
 
         let small_on = on && cfg.discord_small_on;
@@ -543,6 +581,13 @@ fn discord_section(ui: &mut egui::Ui, cfg: &mut Config, info: &Info) {
         ui.end_row();
         if small_on && too_short(&cfg.discord_small_text) {
             warn(ui, "Needs 2+ characters to show.");
+        } else if small_on
+            && repeats(
+                &cfg.discord_small_text,
+                &[&cfg.discord_title, &cfg.discord_details, bottom, &cfg.discord_large_text],
+            )
+        {
+            note(ui, REPEAT_NOTE);
         }
 
         ui.label("Button");
@@ -595,6 +640,7 @@ fn discord_preview(ui: &mut egui::Ui, cfg: &Config, info: &Info) {
         let t = s.trim();
         (t.chars().count() >= 2).then(|| t.chars().take(MAX_TEXT).collect::<String>())
     };
+    let bottom = if cfg.discord_extra_on { cfg.discord_extra.as_str() } else { "" };
     ui.add_space(8.0);
     weak(ui, "Preview (how friends will see it)");
     egui::Frame::default()
@@ -624,12 +670,12 @@ fn discord_preview(ui: &mut egui::Ui, cfg: &Config, info: &Info) {
                         );
                         let hover = ui.interact(r, ui.id().with("discord-badge"), egui::Sense::hover());
                         on_badge = hover.hovered();
-                        if let Some(t) = shown(&cfg.discord_small_text) {
+                        if let Some(t) = shown(&cfg.discord_small_text).filter(|t| !repeats(t, &[&cfg.discord_title, &cfg.discord_details, bottom, &cfg.discord_large_text])) {
                             hover.on_hover_text(t);
                         }
                     }
                     if !on_badge {
-                        if let Some(t) = shown(&cfg.discord_large_text) {
+                        if let Some(t) = shown(&cfg.discord_large_text).filter(|t| !repeats(t, &[&cfg.discord_title, &cfg.discord_details, bottom])) {
                             big.on_hover_text(t);
                         }
                     }

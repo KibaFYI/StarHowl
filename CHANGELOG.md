@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.7
+- Video position: Left / Center / Right and Top / Middle / Bottom (Settings →
+  Video → Position), to leave room on one side for stream overlays.
+- Discord on phones no longer shows the same line twice. Text that repeats a
+  line already shown is left out (phones show hover texts as extra lines).
+- `STARHOWL_CONFIG_DIR` environment variable: keep settings and log in another
+  folder (portable use, or running a second copy).
+
 ## v0.2.6
 - Fixed: the small purple badge didn't show on Discord (Discord's image cache
   held an old "not found"; the badge now uses a fresh link).

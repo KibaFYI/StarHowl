@@ -32,6 +32,18 @@ choice_enum!(Filter {
     Pixel => "Pixel (nearest)",
 } default Sharp);
 
+choice_enum!(AlignX {
+    Left => "Left",
+    Center => "Center",
+    Right => "Right",
+} default Center);
+
+choice_enum!(AlignY {
+    Top => "Top",
+    Middle => "Middle",
+    Bottom => "Bottom",
+} default Middle);
+
 choice_enum!(ColorRange {
     Auto => "Auto",
     Limited => "Limited (16-235)",
@@ -310,6 +322,9 @@ pub struct Config {
     pub video_link: String,
     pub scaling: Scaling,
     pub filter: Filter,
+    /// Where the picture sits when there's spare room (room for overlays).
+    pub align_x: AlignX,
+    pub align_y: AlignY,
     pub color_range: ColorRange,
     pub color_matrix: ColorMatrix,
 
@@ -389,6 +404,8 @@ impl Default for Config {
             video_link: String::new(),
             scaling: Scaling::Fit,
             filter: Filter::Sharp,
+            align_x: AlignX::Center,
+            align_y: AlignY::Middle,
             color_range: ColorRange::Auto,
             color_matrix: ColorMatrix::Auto,
             audio_in: "auto".into(),
@@ -437,7 +454,16 @@ impl Default for Config {
     }
 }
 
+/// Set by STARHOWL_CONFIG_DIR: settings and log live there instead (portable
+/// use, or a second copy for testing).
+pub fn custom_config_dir() -> Option<PathBuf> {
+    std::env::var_os("STARHOWL_CONFIG_DIR").filter(|v| !v.is_empty()).map(PathBuf::from)
+}
+
 pub fn config_dir() -> PathBuf {
+    if let Some(dir) = custom_config_dir() {
+        return dir;
+    }
     std::env::var_os("APPDATA")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."))

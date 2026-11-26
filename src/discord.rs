@@ -316,13 +316,25 @@ fn text(s: &str) -> Option<String> {
 
 fn activity_json(p: &Presence) -> Value {
     let mut a = json!({ "type": p.kind, "instance": false });
-    if let Some(t) = text(&p.title) {
+    // Phones can't hover, so Discord shows the big/small hover texts as extra
+    // lines there. Leave out any text that repeats one already shown, or the
+    // same words appear twice.
+    let mut seen: Vec<String> = Vec::new();
+    let mut fresh = |t: Option<String>| -> Option<String> {
+        let t = t?;
+        if seen.iter().any(|s| s.eq_ignore_ascii_case(&t)) {
+            return None;
+        }
+        seen.push(t.clone());
+        Some(t)
+    };
+    if let Some(t) = fresh(text(&p.title)) {
         a["name"] = json!(t);
     }
-    if let Some(d) = text(&p.details) {
+    if let Some(d) = fresh(text(&p.details)) {
         a["details"] = json!(d);
     }
-    if let Some(s) = p.state.as_deref().and_then(text) {
+    if let Some(s) = fresh(p.state.as_deref().and_then(text)) {
         a["state"] = json!(s);
     }
     if let Some(start) = p.start {
@@ -332,13 +344,13 @@ fn activity_json(p: &Presence) -> Value {
     let image = p.large_image.trim();
     if is_picture(image) {
         assets["large_image"] = json!(image);
-        if let Some(t) = text(&p.large_text) {
+        if let Some(t) = fresh(text(&p.large_text)) {
             assets["large_text"] = json!(t);
         }
     }
     if let Some(small) = p.small_image.as_deref().map(str::trim).filter(|s| is_picture(s)) {
         assets["small_image"] = json!(small);
-        if let Some(t) = text(&p.small_text) {
+        if let Some(t) = fresh(text(&p.small_text)) {
             assets["small_text"] = json!(t);
         }
     }
@@ -425,6 +437,23 @@ mod tests {
         let a = activity_json(&p);
         assert!(a.get("assets").is_none());
         assert_eq!(a["buttons"][0]["label"].as_str().unwrap().chars().count(), MAX_BUTTON);
+    }
+
+    #[test]
+    fn repeated_text_is_sent_once() {
+        // The mobile bug: middle text and big text both "Capturing Xbox One S".
+        let mut p = sample();
+        p.details = "Capturing Xbox One S".into();
+        p.large_text = "capturing xbox one s".into();
+        p.state = None;
+        p.small_text = "Capturing Xbox One S".into();
+        let a = activity_json(&p);
+        assert_eq!(a["details"], "Capturing Xbox One S");
+        assert!(a["assets"].get("large_text").is_none());
+        assert!(a["assets"].get("small_text").is_none());
+        // Different words still go through.
+        p.large_text = "Xbox One S".into();
+        assert_eq!(activity_json(&p)["assets"]["large_text"], "Xbox One S");
     }
 
     #[test]

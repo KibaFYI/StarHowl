@@ -141,7 +141,8 @@ pub fn run(cfg: Config) -> Result<()> {
     unsafe {
         // One copy at a time: two would fight over the capture card.
         let _mutex = CreateMutexW(None, true, w!("Local\\Starhowl.SingleInstance"))?;
-        if GetLastError() == ERROR_ALREADY_EXISTS {
+        // (A copy with its own settings folder is allowed, e.g. for testing.)
+        if GetLastError() == ERROR_ALREADY_EXISTS && crate::config::custom_config_dir().is_none() {
             if let Ok(other) = FindWindowW(MAIN_CLASS, PCWSTR::null()) {
                 let _ = ShowWindow(other, SW_RESTORE);
                 let _ = SetForegroundWindow(other);
@@ -358,7 +359,7 @@ unsafe fn initial_rect(cfg: &Config) -> Rect {
 }
 
 /// Where the video sits inside a window of `ww` x `wh` pixels.
-fn video_rect(s: Scaling, fw: u32, fh: u32, ww: u32, wh: u32) -> [f32; 4] {
+fn video_rect(s: Scaling, ax: AlignX, ay: AlignY, fw: u32, fh: u32, ww: u32, wh: u32) -> [f32; 4] {
     let (fw, fh, ww, wh) = (fw.max(1) as f32, fh.max(1) as f32, ww as f32, wh as f32);
     let k = (ww / fw).min(wh / fh);
     let scale = match s {
@@ -377,8 +378,16 @@ fn video_rect(s: Scaling, fw: u32, fh: u32, ww: u32, wh: u32) -> [f32; 4] {
         Scaling::Stretch => return [0.0, 0.0, ww, wh],
     };
     let (vw, vh) = ((fw * scale).round(), (fh * scale).round());
-    let x0 = ((ww - vw) / 2.0).floor();
-    let y0 = ((wh - vh) / 2.0).floor();
+    let x0 = match ax {
+        AlignX::Left => 0.0,
+        AlignX::Center => ((ww - vw) / 2.0).floor(),
+        AlignX::Right => ww - vw,
+    };
+    let y0 = match ay {
+        AlignY::Top => 0.0,
+        AlignY::Middle => ((wh - vh) / 2.0).floor(),
+        AlignY::Bottom => wh - vh,
+    };
     [x0, y0, x0 + vw, y0 + vh]
 }
 
@@ -964,7 +973,7 @@ impl App {
             [fill_id(bg); 4]
         };
         Look {
-            vrect: video_rect(c.scaling, fw, fh, w, h),
+            vrect: video_rect(c.scaling, c.align_x, c.align_y, fw, fh, w, h),
             has_video,
             zones,
             frame_rgb,
@@ -1714,26 +1723,37 @@ mod tests {
     #[test]
     fn fit_pillarboxes_a_wide_window() {
         // 1080p video in a 1700x720 window: 1280x720 centred, 210px bars.
-        assert_eq!(video_rect(Scaling::Fit, 1920, 1080, 1700, 720), [210.0, 0.0, 1490.0, 720.0]);
+        assert_eq!(video_rect(Scaling::Fit, AlignX::Center, AlignY::Middle, 1920, 1080, 1700, 720), [210.0, 0.0, 1490.0, 720.0]);
     }
 
     #[test]
     fn fit_letterboxes_a_tall_window() {
-        assert_eq!(video_rect(Scaling::Fit, 1920, 1080, 1280, 1000), [0.0, 140.0, 1280.0, 860.0]);
+        assert_eq!(video_rect(Scaling::Fit, AlignX::Center, AlignY::Middle, 1920, 1080, 1280, 1000), [0.0, 140.0, 1280.0, 860.0]);
     }
 
     #[test]
     fn integer_scaling_uses_whole_steps() {
         // 2.4x fits -> 2x; 0.7x fits -> 1/2x.
-        assert_eq!(video_rect(Scaling::Integer, 640, 480, 1600, 1200), [160.0, 120.0, 1440.0, 1080.0]);
-        assert_eq!(video_rect(Scaling::Integer, 1920, 1080, 1344, 756), [192.0, 108.0, 1152.0, 648.0]);
+        assert_eq!(video_rect(Scaling::Integer, AlignX::Center, AlignY::Middle, 640, 480, 1600, 1200), [160.0, 120.0, 1440.0, 1080.0]);
+        assert_eq!(video_rect(Scaling::Integer, AlignX::Center, AlignY::Middle, 1920, 1080, 1344, 756), [192.0, 108.0, 1152.0, 648.0]);
     }
 
     #[test]
     fn fixed_scales_and_stretch() {
-        assert_eq!(video_rect(Scaling::Half, 1920, 1080, 1920, 1080), [480.0, 270.0, 1440.0, 810.0]);
-        assert_eq!(video_rect(Scaling::Third, 1920, 1080, 640, 360), [0.0, 0.0, 640.0, 360.0]);
-        assert_eq!(video_rect(Scaling::Stretch, 1920, 1080, 800, 800), [0.0, 0.0, 800.0, 800.0]);
+        assert_eq!(video_rect(Scaling::Half, AlignX::Center, AlignY::Middle, 1920, 1080, 1920, 1080), [480.0, 270.0, 1440.0, 810.0]);
+        assert_eq!(video_rect(Scaling::Third, AlignX::Center, AlignY::Middle, 1920, 1080, 640, 360), [0.0, 0.0, 640.0, 360.0]);
+        assert_eq!(video_rect(Scaling::Stretch, AlignX::Center, AlignY::Middle, 1920, 1080, 800, 800), [0.0, 0.0, 800.0, 800.0]);
+    }
+
+    #[test]
+    fn position_pushes_the_picture_to_a_side() {
+        let fit = |ax, ay, ww, wh| video_rect(Scaling::Fit, ax, ay, 1920, 1080, ww, wh);
+        // Wide window: 1280x720 picture with 420 px spare.
+        assert_eq!(fit(AlignX::Left, AlignY::Middle, 1700, 720), [0.0, 0.0, 1280.0, 720.0]);
+        assert_eq!(fit(AlignX::Right, AlignY::Middle, 1700, 720), [420.0, 0.0, 1700.0, 720.0]);
+        // Tall window: 1280x720 picture with 280 px spare.
+        assert_eq!(fit(AlignX::Center, AlignY::Top, 1280, 1000), [0.0, 0.0, 1280.0, 720.0]);
+        assert_eq!(fit(AlignX::Center, AlignY::Bottom, 1280, 1000), [0.0, 280.0, 1280.0, 1000.0]);
     }
 
     #[test]

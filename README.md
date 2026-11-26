@@ -53,6 +53,7 @@ You can change the Settings, Fullscreen and Mute keys in settings.
 - Borderless window, always on top, mouse hides when idle.
 - Around the picture: black, white, deep purple galaxy, or your own image.
 - Left, right, top and bottom can each be different. Optional frame.
+- Push the picture left, right, up or down to leave room for overlays.
 
 **Discord**
 - Shows as **Watching Stream With StarHowl**.
@@ -107,6 +108,9 @@ starhowl.exe --record-audio sample.wav
 Saves 4 seconds of the card's raw audio.
 
 Log file: `%APPDATA%\Starhowl\starhowl.log`
+
+Portable / second copy: set `STARHOWL_CONFIG_DIR` to a folder and Starhowl keeps
+its settings and log there.
 
 </details>
 
