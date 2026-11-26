@@ -107,6 +107,10 @@ pub struct App {
     discord_start: u64,
     discord_img: Option<crate::image::Rgba>,
     discord_art: Option<egui::TextureHandle>,
+    /// When the picture went away (for hiding the Discord status).
+    no_signal_since: Option<Instant>,
+    /// The Discord status is hidden because there's been no picture.
+    discord_hidden: bool,
     discord_badge_img: Option<crate::image::Rgba>,
     discord_badge: Option<egui::TextureHandle>,
 
@@ -137,19 +141,31 @@ pub struct App {
     settings_placed: bool,
 }
 
-pub fn run(cfg: Config) -> Result<()> {
+/// Keeps the "Starhowl is running" marker alive while the app runs.
+pub struct InstanceGuard(#[allow(dead_code)] Option<HANDLE>);
+
+/// One copy at a time: two would fight over the capture card. If Starhowl is
+/// already open, its window is brought forward and this returns None.
+/// (A copy with its own settings folder, STARHOWL_CONFIG_DIR, may run alongside.)
+pub fn single_instance() -> Option<InstanceGuard> {
+    if crate::config::custom_config_dir().is_some() {
+        return Some(InstanceGuard(None));
+    }
     unsafe {
-        // One copy at a time: two would fight over the capture card.
-        let _mutex = CreateMutexW(None, true, w!("Local\\Starhowl.SingleInstance"))?;
-        // (A copy with its own settings folder is allowed, e.g. for testing.)
-        if GetLastError() == ERROR_ALREADY_EXISTS && crate::config::custom_config_dir().is_none() {
+        let h = CreateMutexW(None, true, w!("Local\\Starhowl.SingleInstance")).ok();
+        if GetLastError() == ERROR_ALREADY_EXISTS {
             if let Ok(other) = FindWindowW(MAIN_CLASS, PCWSTR::null()) {
                 let _ = ShowWindow(other, SW_RESTORE);
                 let _ = SetForegroundWindow(other);
             }
-            return Ok(());
+            return None;
         }
+        Some(InstanceGuard(h))
+    }
+}
 
+pub fn run(cfg: Config) -> Result<()> {
+    unsafe {
         let hinst: HINSTANCE = GetModuleHandleW(None)?.into();
         let icon_big = LoadImageW(Some(hinst), PCWSTR(1 as _), IMAGE_ICON, 0, 0, LR_DEFAULTSIZE)
             .map(|h| HICON(h.0))
@@ -254,6 +270,8 @@ pub fn run(cfg: Config) -> Result<()> {
                 .unwrap_or(0),
             discord_img: crate::image::load_bytes(include_bytes!("../assets/discord-large.png"), 256).ok(),
             discord_art: None,
+            no_signal_since: None,
+            discord_hidden: false,
             discord_badge_img: crate::image::load_bytes(include_bytes!("../assets/discord-small.png"), 128).ok(),
             discord_badge: None,
             vshared: video::Shared::new(),
@@ -850,7 +868,7 @@ impl App {
     /// What Discord should show right now (None = presence off).
     fn presence(&self) -> Option<discord::Presence> {
         let c = &self.cfg;
-        if !c.discord_enabled {
+        if !c.discord_enabled || self.discord_hidden {
             return None;
         }
         let app_id = if c.discord_app_id.trim().is_empty() { DISCORD_APP_ID } else { c.discord_app_id.trim() };
@@ -1152,7 +1170,11 @@ impl App {
                 )
             });
         }
-        let discord_status = self.discord.as_ref().map(|d| d.status()).unwrap_or_default();
+        let discord_status = if self.cfg.discord_enabled && self.discord_hidden {
+            "Hidden: no picture for a minute. It comes back with the picture.".to_string()
+        } else {
+            self.discord.as_ref().map(|d| d.status()).unwrap_or_default()
+        };
         let elapsed = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs().saturating_sub(self.discord_start))
@@ -1215,6 +1237,9 @@ impl App {
                 Action::WindowSize(w, h) => self.set_window_size(w, h),
                 Action::PickImage => unsafe {
                     let _ = PostMessageW(Some(self.settings), WM_APP_PICK_IMAGE, WPARAM(0), LPARAM(0));
+                },
+                Action::Quit => unsafe {
+                    let _ = PostMessageW(Some(self.main), WM_CLOSE, WPARAM(0), LPARAM(0));
                 },
                 Action::RefreshDevices => {
                     self.refresh_devices();
@@ -1359,6 +1384,21 @@ impl App {
 
         // No signal: show the waiting screen, animated if stars twinkle.
         let no_signal = self.no_signal();
+
+        // Console off or unplugged for a minute: take the Discord status down
+        // (and put it back when the picture returns).
+        if no_signal {
+            self.no_signal_since.get_or_insert(now);
+        } else {
+            self.no_signal_since = None;
+        }
+        let hide = self.cfg.discord_hide_no_signal
+            && self.no_signal_since.is_some_and(|t| now.duration_since(t) >= Duration::from_secs(60));
+        if hide != self.discord_hidden {
+            self.discord_hidden = hide;
+            crate::log!("discord: {}", if hide { "hidden (no picture for a minute)" } else { "shown again" });
+            self.update_discord();
+        }
         let want_anim = no_signal && self.cfg.twinkle && self.galaxy_visible();
         if want_anim != self.anim_on {
             unsafe {

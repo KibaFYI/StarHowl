@@ -27,6 +27,7 @@ pub enum Action {
     WindowSize(u32, u32),
     PickImage,
     RefreshDevices,
+    Quit,
 }
 
 /// Read-only facts the settings page shows.
@@ -151,6 +152,14 @@ pub fn settings(ctx: &egui::Context, cfg: &mut Config, info: &Info, actions: &mu
                 discord_section(ui, cfg, info);
                 keys_section(ui, cfg, info, actions);
                 ui.add_space(14.0);
+                if ui
+                    .button("Quit Starhowl")
+                    .on_hover_text("Closes Starhowl completely. The X on this window only hides settings.")
+                    .clicked()
+                {
+                    actions.push(Action::Quit);
+                }
+                ui.add_space(6.0);
                 weak(ui, format!("Settings save automatically  ·  Starhowl {}", env!("CARGO_PKG_VERSION")));
                 ui.add_space(4.0);
             });
@@ -617,6 +626,10 @@ fn discord_section(ui: &mut egui::Ui, cfg: &mut Config, info: &Info) {
 
         ui.label("Timer");
         ui.add_enabled(on, egui::Checkbox::new(&mut cfg.discord_elapsed, "Show time elapsed"));
+        ui.end_row();
+
+        ui.label("No picture");
+        ui.add_enabled(on, egui::Checkbox::new(&mut cfg.discord_hide_no_signal, "Hide the status after 1 minute"));
         ui.end_row();
 
         ui.label("App ID");

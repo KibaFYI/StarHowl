@@ -392,6 +392,8 @@ pub struct Config {
     pub discord_button_label: String,
     pub discord_button_url: String,
     pub discord_elapsed: bool,
+    /// Clear the Discord status after a minute without a picture.
+    pub discord_hide_no_signal: bool,
 
     // Kept last: TOML wants tables after plain values.
     pub mode: Option<ModeSel>,
@@ -449,6 +451,7 @@ impl Default for Config {
             discord_button_label: "Watch me".into(),
             discord_button_url: String::new(),
             discord_elapsed: true,
+            discord_hide_no_signal: true,
             mode: None,
         }
     }

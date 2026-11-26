@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.8
+- Discord status hides itself after a minute with no picture (console off or
+  unplugged) and comes back with the picture. Settings → Discord → No picture.
+- "Quit Starhowl" button at the bottom of settings (the settings X only hides
+  settings, which made it easy to think Starhowl had closed).
+- Fixed: opening Starhowl a second time wiped the running copy's log file.
+
 ## v0.2.7
 - Video position: Left / Center / Right and Top / Middle / Bottom (Settings →
   Video → Position), to leave room on one side for stream overlays.

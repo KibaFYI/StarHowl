@@ -37,6 +37,9 @@
 
 You can change the Settings, Fullscreen and Mute keys in settings.
 
+Quit: **Alt+F4**, or **Quit Starhowl** at the bottom of settings. (The X on the
+settings window only hides settings.)
+
 ## What you get
 
 **Picture**
@@ -61,6 +64,7 @@ You can change the Settings, Fullscreen and Mute keys in settings.
   pictures, big and small hover text, button text and button link.
 - Typos can't break it. Bad links fall back to the defaults, and settings warn you.
 - No login. No token. Turn it on in Settings → Discord.
+- Goes away when you quit, and hides itself after a minute with no picture.
 
 ## Something wrong?
 

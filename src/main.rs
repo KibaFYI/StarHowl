@@ -27,6 +27,17 @@ use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
 const MF_VERSION: u32 = 0x0002_0070;
 
 fn main() {
+    let diagnostics = std::env::args().any(|a| a == "--probe" || a == "--record-audio");
+    // Check before opening the log, so a second launch can't wipe the running
+    // copy's log. The guard lives until main ends.
+    let _instance = if diagnostics {
+        None
+    } else {
+        match app::single_instance() {
+            Some(g) => Some(g),
+            None => return, // already open: it was brought to the front
+        }
+    };
     logging::init();
     log!("Starhowl {} starting", env!("CARGO_PKG_VERSION"));
     unsafe {
